@@ -1,17 +1,130 @@
-import React from 'react'
-import { ConnectWallet, useAddress, useMetamask, useDisconnect } from "@thirdweb-dev/react";
+import React, { useEffect, useState } from 'react'
+import { ConnectWallet, useAddress, useMetamask, useDisconnect, useContract, useTokenSupply } from "@thirdweb-dev/react";
 import { GetServerSideProps } from 'next';
 import { sanityClient, urlFor } from '../../sanity';
 import { Collection } from '../../typings';
 import Link from 'next/link';
+import { BigNumber } from 'ethers';
+import toast, { Toaster } from 'react-hot-toast';
 
 
 type Props = {
   collection: Collection,
+
 }
 
 function NftDropPage({collection}: Props) {
-  // console.log(collection)
+
+  const [claimedSupply, setClaimedSupply] = useState<number>(0);
+  const [totalSupply, setTotalSupply] = useState<BigNumber>();
+  const [unclaimedSupply, setUnClaimedSupply] = useState<number>(0);
+  const [totalMintedSupply, setTotalMintedSupply] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [price, setPrice] = useState<string>();
+
+  const { contract } = useContract(collection.address, "nft-drop");
+
+  useEffect(() => {
+    if(!contract) return;
+    const fetchContractData = async () => {
+      setLoading(true);
+      // claimed nfts
+      const claimed = await contract?.getAllClaimed();      // const firstOwner = claimedNFTs[0].owner;
+
+      // total Nfts...
+      let unclaimed = await contract.getAllUnclaimed();
+      setUnClaimedSupply(unclaimed.length)
+
+      setClaimedSupply(claimed.length)
+
+      // const total = claimed + unclaimed;
+      const nfts = await contract.getAll();
+      // console.log(nfts.length); //gives total of 21
+      setTotalMintedSupply(nfts.length)
+      
+
+
+      setClaimedSupply(claimed.length)
+      setLoading(false);
+
+
+
+    };
+    fetchContractData()
+
+    
+
+  }, [contract]);
+  useEffect(() => {
+   const fetchPrice = async () => {
+    const claimConditions = await contract?.claimConditions.getAll();
+    setPrice(claimConditions?.[1].currencyMetadata.displayValue)
+   };
+
+  }, [contract])
+  const mintNft = () => {
+    if(!contract || !address) return;
+    const quantity = 1;
+    setLoading(true);
+    const notification = toast.loading("Minting...", {
+      style: {
+        background: "white",
+      color: "green",
+     fontWeight: "bolder",
+    fontSize: "17px",
+   padding: "20px",
+      }
+    })
+   
+      
+    contract.claimTo(address, quantity).then(async (tx) => {
+      // const tx = await contract.claimTo(address, quantity); ...already defined
+      const receipt = tx[0].receipt; // the transaction receipt
+     const claimedTokenId = tx[0].id; // the id of the NFT claimed
+      const claimedNFT = await tx[0].data(); // (optional) get the claimed NFT metadata
+
+      toast.success('YOOOH...you have successfully minted!!!', {
+        duration: 7000,
+        style: {
+          background: "white",
+          color: "green",
+         fontWeight: "bolder",
+        fontSize: "17px",
+       padding: "20px",
+
+        }
+      })
+
+
+      console.log(receipt);
+      console.log(claimedTokenId);
+      console.log(claimedNFT);
+
+
+    }).catch((error) => {
+      console.log(error)
+      toast('Something went wrong, Try Later...', {
+        style: {
+          background: "red",
+          color: "white",
+          fontWeight: "bolder",
+          fontSize: "17px",
+          padding: "20px",
+        }
+      })
+    }).finally(() => {
+      setLoading(false);
+      toast.dismiss(notification);
+    })
+
+
+  }
+
+ 
+
+ 
+
+
   // collection no problem
 
   // auth stuff
@@ -24,6 +137,10 @@ function NftDropPage({collection}: Props) {
    
   return (
     <div className='flex h-screen flex-col lg:grid lg:grid-cols-10'>
+      <Toaster 
+      position='bottom-center'
+      
+      />
         {/* Left side */}
         <div className='bg-gradient-to-br from-cyan-800 to-rose-500 lg:col-span-4'>
             <div className='flex flex-col items-center justify-center py-2 lg:min-h-screen'>
@@ -73,11 +190,49 @@ function NftDropPage({collection}: Props) {
                   {collection.title}
                 </h1>
                 {/* The witty Fam Coding Club | NFT-DROP */}
-                <p className='p-2 text-xl text-green-500 '>13 / 21 NFTs claimed</p>
+                {loading ? (
+                  <p className='p-2 text-xl text-green-500 animate-pulse'>
+                  Loading supply count...
+                  </p>
 
+
+
+                ) : (
+                  <p className='p-2 text-xl text-green-500'>{claimedSupply} / {totalMintedSupply?.toString()} NFTs claimed</p>
+
+
+                )}
+                {loading && (
+                  <img className="h-60 w-60 object-contain" src="https://miro.medium.com/max/1400/1*CsJ05WEGfunYMLGfsT2sXA.gif" alt="" />
+
+                )}
+                {/* <p className='p-2 text-xl text-green-500'>{claimedSupply} / {totalMintedSupply?.toString()} NFTs claimed</p> */}
+                
             </div>
             {/* mint button */}
-            <button className='h-16 bg-red-600 text-white rounded-full w-full mt-5'><span className='font-bold'>MINT NFT</span>(0.01 ETH)</button>
+            {/* https://miro.medium.com/max/1400/1*CsJ05WEGfunYMLGfsT2sXA.gif */}
+            <button 
+            onClick={mintNft}
+            
+            disabled={loading || claimedSupply === totalMintedSupply || !address} 
+            className='h-16 bg-red-600 text-white rounded-full w-full mt-5 disabled:bg-gray-400'
+            >
+              {loading ? (
+                <>Loading</>
+              ) : claimedSupply === totalMintedSupply ? (
+                <>SOLD OUT</>
+
+
+              ): !address ? (
+                <>Sign In To <span className='text-green-300 uppercase font-semibold'>mint</span> NFT</>
+              ): (
+                <span className='font-bold'>MINT Nft ({price || 0.01} ETH)</span>
+              )}
+              
+                {/* <span className='font-bold'>Mint Nft(0.01 ETH)</span> */}
+              </button>
+                  
+
 
         </div>
     </div>
